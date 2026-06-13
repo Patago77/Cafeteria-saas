@@ -1,0 +1,139 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum RolUsuario {
+  admin
+  cajero
+  mozo
+}
+
+enum EstadoPedido {
+  pendiente
+  en_preparacion
+  listo
+  entregado
+  cancelado
+}
+
+enum EstadoPago {
+  pendiente
+  pagado
+  reembolsado
+}
+
+enum EstadoTenant {
+  activo
+  suspendido
+  trial
+}
+
+model Tenant {
+  id              String       @id @default(cuid())
+  nombre          String
+  slug            String       @unique
+  email           String       @unique
+  plan            String       @default("trial")
+  estado          EstadoTenant @default(trial)
+  mpAccessToken   String?      // encriptado con crypto.ts
+  mpRefreshToken  String?      // encriptado
+  mpUserId        String?
+  creadoEn        DateTime     @default(now())
+  actualizadoEn   DateTime     @updatedAt
+
+  usuarios   Usuario[]
+  pedidos    Pedido[]
+  productos  Producto[]
+  cajas      Caja[]
+}
+
+model Usuario {
+  id           String     @id @default(cuid())
+  tenantId     String
+  nombre       String
+  email        String
+  passwordHash String
+  rol          RolUsuario @default(cajero)
+  activo       Boolean    @default(true)
+  creadoEn     DateTime   @default(now())
+
+  tenant  Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  pedidos Pedido[]
+
+  @@unique([tenantId, email])
+}
+
+model Producto {
+  id          String   @id @default(cuid())
+  tenantId    String
+  nombre      String
+  descripcion String?
+  precio      Decimal  @db.Decimal(10, 2)
+  categoria   String   @default("general")
+  activo      Boolean  @default(true)
+  stock       Int?
+  imagen      String?
+  creadoEn    DateTime @default(now())
+
+  tenant Tenant       @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  items  ItemPedido[]
+}
+
+model Pedido {
+  id          String       @id @default(cuid())
+  tenantId    String
+  usuarioId   String?
+  mesa        String?
+  estado      EstadoPedido @default(pendiente)
+  estadoPago  EstadoPago   @default(pendiente)
+  total       Decimal      @db.Decimal(10, 2)
+  mpPaymentId String?
+  notas       String?
+  creadoEn    DateTime     @default(now())
+  actualizadoEn DateTime   @updatedAt
+
+  tenant  Tenant       @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  usuario Usuario?     @relation(fields: [usuarioId], references: [id])
+  items   ItemPedido[]
+}
+
+model ItemPedido {
+  id         String  @id @default(cuid())
+  pedidoId   String
+  productoId String
+  cantidad   Int
+  precioUnit Decimal @db.Decimal(10, 2)
+  notas      String?
+
+  pedido   Pedido   @relation(fields: [pedidoId], references: [id], onDelete: Cascade)
+  producto Producto @relation(fields: [productoId], references: [id])
+}
+
+model Caja {
+  id          String   @id @default(cuid())
+  tenantId    String
+  nombre      String
+  mpPosId     String?
+  mpQrData    String?
+  activo      Boolean  @default(true)
+  creadoEn    DateTime @default(now())
+
+  tenant      Tenant             @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  movimientos MovimientoCaja[]
+}
+
+model MovimientoCaja {
+  id       String   @id @default(cuid())
+  cajaId   String
+  tipo     String   // apertura | cierre | retiro | ingreso
+  monto    Decimal  @db.Decimal(10, 2)
+  notas    String?
+  fecha    DateTime @default(now())
+
+  caja Caja @relation(fields: [cajaId], references: [id], onDelete: Cascade)
+}

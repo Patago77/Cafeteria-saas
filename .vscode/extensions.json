@@ -1,0 +1,13 @@
+{
+  "recommendations": [
+    "anthropic.claude-vscode",
+    "Prisma.prisma",
+    "bradlc.vscode-tailwindcss",
+    "dbaeumer.vscode-eslint",
+    "esbenp.prettier-vscode",
+    "ms-vscode.vscode-typescript-next",
+    "humao.rest-client",
+    "PKief.material-icon-theme",
+    "formulahendry.auto-rename-tag"
+  ]
+}

@@ -1,0 +1,10 @@
+{
+  "name": "Cafetería SaaS",
+  "short_name": "Cafetería",
+  "description": "Sistema de gestión para cafeterías",
+  "start_url": "/pos",
+  "display": "standalone",
+  "background_color": "#fffbeb",
+  "theme_color": "#92400e",
+  "icons": []
+}
