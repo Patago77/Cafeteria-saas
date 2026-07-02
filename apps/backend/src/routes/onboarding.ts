@@ -3,6 +3,7 @@ import { autenticar } from '../middlewares/auth';
 import { requiereRol } from '../middlewares/roles';
 import type { AuthRequest } from '../middlewares/auth';
 import { prisma } from '../lib/prisma';
+import { signMpState, verifyMpState } from '../lib/jwt';
 
 const router = Router();
 
@@ -13,7 +14,7 @@ router.get('/mp-url', autenticar, requiereRol('admin'), (req, res) => {
     response_type: 'code',
     client_id: process.env.MP_APP_ID!,
     redirect_uri: process.env.MP_REDIRECT_URI!,
-    state: tenantId,
+    state: signMpState(tenantId),
   });
   res.json({ url: `https://auth.mercadopago.com.ar/authorization?${params}` });
 });
@@ -21,9 +22,17 @@ router.get('/mp-url', autenticar, requiereRol('admin'), (req, res) => {
 // GET /api/onboarding/mp-callback — recibe el código OAuth de MP
 router.get('/mp-callback', async (req, res, next) => {
   try {
-    const { code, state: tenantId } = req.query as { code: string; state: string };
-    if (!code || !tenantId) {
+    const { code, state } = req.query as { code: string; state: string };
+    if (!code || !state) {
       res.status(400).json({ error: 'Parámetros inválidos' });
+      return;
+    }
+
+    let tenantId: string;
+    try {
+      tenantId = verifyMpState(state);
+    } catch {
+      res.status(400).json({ error: 'state inválido o expirado', code: 'INVALID_STATE' });
       return;
     }
 

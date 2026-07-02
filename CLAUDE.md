@@ -47,10 +47,11 @@ cafeteria-saas/
 
 ## Comandos útiles
 ```bash
-npm run dev              # levanta backend (3001) y frontend (3000)
+npm run dev              # levanta backend y frontend (puertos según .env / .env.local)
+npm run test             # tests del backend (Vitest)
 npm run db:migrate       # aplica migraciones Prisma
 npm run db:studio        # UI visual de la DB
-npm run docker:up        # levanta Postgres en Docker
+docker compose -f docker/docker-compose.yml up -d   # levanta Postgres en Docker
 ```
 
 ## Patrones de código establecidos

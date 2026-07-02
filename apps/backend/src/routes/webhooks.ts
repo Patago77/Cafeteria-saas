@@ -7,9 +7,13 @@ const router = Router();
 // Responder 200 inmediato y procesar async (regla crítica)
 router.post('/mercadopago', (req, res) => {
   res.status(200).end();
-  const { type, data } = req.body as { type: string; data: { id: string } };
-  if (type === 'payment') {
-    SyncService.procesarPagoMP(data.id).catch(console.error);
+  const { type, data, user_id } = req.body as {
+    type: string;
+    data: { id: string };
+    user_id?: string | number;
+  };
+  if (type === 'payment' && user_id != null) {
+    SyncService.procesarPagoMP(data.id, String(user_id)).catch(console.error);
   }
 });
 

@@ -3,9 +3,9 @@ import { decryptToken } from '../lib/crypto';
 import { emitPedidoActualizado } from '../lib/socket';
 
 export class SyncService {
-  static async procesarPagoMP(paymentId: string) {
+  static async procesarPagoMP(paymentId: string, mpUserId: string) {
     const tenant = await prisma.tenant.findFirst({
-      where: { mpUserId: { not: null } },
+      where: { mpUserId },
       select: { id: true, mpAccessToken: true },
     });
     if (!tenant?.mpAccessToken) return;
