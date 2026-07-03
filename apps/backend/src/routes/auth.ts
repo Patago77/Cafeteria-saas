@@ -6,6 +6,7 @@ import { prisma } from '../lib/prisma';
 import { signToken } from '../lib/jwt';
 import { autenticar } from '../middlewares/auth';
 import type { AuthRequest } from '../middlewares/auth';
+import { EmailService } from '../services/email.service';
 
 const router = Router();
 
@@ -54,6 +55,7 @@ router.post('/registro', async (req, res, next) => {
 
     const usuario = tenant.usuarios[0];
     const token = signToken({ userId: usuario.id, tenantId: tenant.id, rol: usuario.rol });
+    EmailService.bienvenida(data.email, data.nombreCafeteria).catch(console.error);
     res.status(201).json({ token, tenant: { id: tenant.id, nombre: tenant.nombre, slug: tenant.slug } });
   } catch (err) {
     next(err);

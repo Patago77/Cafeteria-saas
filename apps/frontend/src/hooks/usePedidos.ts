@@ -33,7 +33,18 @@ export function usePedidos(filtros?: { estado?: string }) {
         setPedidos((prev) => [pedido, ...prev]);
         return pedido;
       } else {
-        await guardarPedidoLocal({ ...payload, _pendingSync: true });
+        const local = await guardarPedidoLocal({ ...payload, _pendingSync: true });
+        const pedidoLocal: Pedido = {
+          id: String(local.id),
+          mesa,
+          estado: 'pendiente',
+          estadoPago: 'pendiente',
+          total: items.reduce((acc, i) => acc + i.precioUnit * i.cantidad, 0),
+          creadoEn: local.fechaLocal,
+          items: items.map(({ nombre, cantidad }) => ({ nombre, cantidad })),
+        };
+        setPedidos((prev) => [pedidoLocal, ...prev]);
+        return pedidoLocal;
       }
     } finally {
       setLoading(false);

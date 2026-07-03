@@ -18,8 +18,10 @@ function getDB() {
 
 export async function guardarPedidoLocal(pedido: unknown) {
   const db = await getDB();
-  await db.add('pedidos', { ...pedido as object, fechaLocal: new Date().toISOString() });
-  await db.add('cola_sync', { tipo: 'crear_pedido', datos: pedido, fechaLocal: new Date().toISOString() });
+  const fechaLocal = new Date().toISOString();
+  const id = await db.add('pedidos', { ...(pedido as object), fechaLocal });
+  await db.add('cola_sync', { tipo: 'crear_pedido', datos: pedido, fechaLocal });
+  return { ...(pedido as object), id, fechaLocal };
 }
 
 export async function getPedidosLocales() {

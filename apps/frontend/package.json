@@ -13,6 +13,7 @@
   },
   "dependencies": {
     "@cafeteria-saas/types": "*",
+    "@cafeteria-saas/utils": "*",
     "class-variance-authority": "^0.7.0",
     "clsx": "^2.1.1",
     "idb": "^8.0.0",

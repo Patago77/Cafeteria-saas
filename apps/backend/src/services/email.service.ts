@@ -1,7 +1,24 @@
+import nodemailer, { type Transporter } from 'nodemailer';
+
 interface EmailOptions {
   to: string;
   subject: string;
   html: string;
+}
+
+let transporter: Transporter | null = null;
+
+function getTransporter(): Transporter {
+  if (!transporter) {
+    const port = Number(process.env.SMTP_PORT ?? 587);
+    transporter = nodemailer.createTransport({
+      host: process.env.SMTP_HOST,
+      port,
+      secure: port === 465,
+      auth: process.env.SMTP_USER ? { user: process.env.SMTP_USER, pass: process.env.SMTP_PASS } : undefined,
+    });
+  }
+  return transporter;
 }
 
 export class EmailService {
@@ -10,8 +27,12 @@ export class EmailService {
       console.log(`[Email mock] Para: ${opts.to} | Asunto: ${opts.subject}`);
       return;
     }
-    // Integrar nodemailer cuando SMTP_HOST esté configurado
-    throw new Error('Email service not implemented yet');
+    await getTransporter().sendMail({
+      from: process.env.EMAIL_FROM ?? 'noreply@cafeteria-saas.com',
+      to: opts.to,
+      subject: opts.subject,
+      html: opts.html,
+    });
   }
 
   static async bienvenida(email: string, nombreCafeteria: string) {

@@ -48,7 +48,7 @@ router.post('/', async (req, res, next) => {
 
 router.patch('/:id/activo', async (req, res, next) => {
   try {
-    const { tenantId } = req as AuthRequest;
+    const { tenantId } = req as unknown as AuthRequest;
     const { activo } = z.object({ activo: z.boolean() }).parse(req.body);
     await prisma.usuario.updateMany({
       where: { id: req.params.id, tenantId },

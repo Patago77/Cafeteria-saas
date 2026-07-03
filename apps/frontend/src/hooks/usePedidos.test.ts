@@ -22,13 +22,6 @@ beforeEach(() => {
   get.mockReset();
   post.mockReset();
   patch.mockReset();
-  // useConexion() arranca siempre con online=true por defecto (useState(true))
-  // y recién se corrige a navigator.onLine en un useEffect. Eso significa que
-  // en el primer render de usePedidos, su propio efecto de carga corre todavía
-  // con online=true y dispara un api.get() de más, incluso arrancando offline
-  // (gap real de la app, no del test). Le damos un valor por defecto inofensivo
-  // para que ese llamado transitorio no rompa los tests offline.
-  get.mockResolvedValue([]);
   setOnlineStatus(true);
 });
 
@@ -49,10 +42,9 @@ describe('carga inicial', () => {
 
     const { result } = renderHook(() => usePedidos());
 
-    // El estado final debe reflejar el pedido local, sin importar el
-    // llamado transitorio a get() del primer render (ver comentario en beforeEach).
     await waitFor(() => expect(result.current.pedidos).toHaveLength(1));
     expect((result.current.pedidos[0] as any).mesa).toBe('3');
+    expect(get).not.toHaveBeenCalled();
   });
 });
 
@@ -72,25 +64,25 @@ describe('crearPedido', () => {
     expect(result.current.pedidos[0].id).toBe('ped-nuevo');
   });
 
-  it('offline: guarda en IndexedDB (gap conocido: el state de React no se actualiza al toque)', async () => {
+  it('offline: guarda en IndexedDB Y antepone el pedido al estado de React', async () => {
     setOnlineStatus(false);
     const { result } = renderHook(() => usePedidos());
     await waitFor(() => expect(result.current.pedidos).toEqual([]));
 
     await act(async () => {
-      await result.current.crearPedido([{ productoId: 'p1', cantidad: 1, nombre: 'Café', precioUnit: 100 }], '5');
+      await result.current.crearPedido([{ productoId: 'p1', cantidad: 2, nombre: 'Café', precioUnit: 100 }], '5');
     });
 
-    // Sí queda persistido para sincronizar después...
+    // queda persistido para sincronizar después...
     const locales = await getPedidosLocales();
     expect(locales).toHaveLength(1);
     expect((locales[0] as any)._pendingSync).toBe(true);
 
-    // ...pero la UI (result.current.pedidos) no lo refleja hasta un refetch/remount.
-    // Si este assert empieza a fallar porque se agregó una actualización optimista
-    // de estado en el branch offline de crearPedido, está bien romper este test:
-    // es la señal de que el gap se resolvió.
-    expect(result.current.pedidos).toEqual([]);
+    // ...y la UI lo refleja de inmediato, sin esperar un refetch/remount.
+    expect(result.current.pedidos).toHaveLength(1);
+    expect(result.current.pedidos[0].mesa).toBe('5');
+    expect(result.current.pedidos[0].total).toBe(200);
+    expect(result.current.pedidos[0].estado).toBe('pendiente');
   });
 });
 

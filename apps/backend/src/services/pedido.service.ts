@@ -86,4 +86,25 @@ export class PedidoService {
       data: { estado: 'cancelado' },
     });
   }
+
+  static async metricasHoy(tenantId: string) {
+    const inicioHoy = new Date();
+    inicioHoy.setHours(0, 0, 0, 0);
+
+    const [pedidosHoy, ventas] = await Promise.all([
+      prisma.pedido.count({
+        where: { tenantId, creadoEn: { gte: inicioHoy }, estado: { not: 'cancelado' } },
+      }),
+      prisma.pedido.aggregate({
+        where: { tenantId, creadoEn: { gte: inicioHoy }, estadoPago: 'pagado' },
+        _sum: { total: true },
+        _count: true,
+      }),
+    ]);
+
+    const ventasTotales = Number(ventas._sum.total ?? 0);
+    const ticketPromedio = ventas._count > 0 ? ventasTotales / ventas._count : 0;
+
+    return { pedidosHoy, ventasTotales, ticketPromedio };
+  }
 }

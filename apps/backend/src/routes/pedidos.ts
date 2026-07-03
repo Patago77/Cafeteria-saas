@@ -33,6 +33,17 @@ router.get('/', async (req, res, next) => {
   }
 });
 
+// GET /api/pedidos/metricas — métricas del día para el dashboard
+router.get('/metricas', async (req, res, next) => {
+  try {
+    const { tenantId } = req as AuthRequest;
+    const metricas = await PedidoService.metricasHoy(tenantId);
+    res.json(metricas);
+  } catch (err) {
+    next(err);
+  }
+});
+
 // POST /api/pedidos — crea un nuevo pedido
 router.post('/', async (req, res, next) => {
   try {

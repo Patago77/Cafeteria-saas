@@ -2,10 +2,9 @@
 import { useState, useEffect } from 'react';
 
 export function useConexion() {
-  const [online, setOnline] = useState(true);
+  const [online, setOnline] = useState(() => (typeof navigator === 'undefined' ? true : navigator.onLine));
 
   useEffect(() => {
-    setOnline(navigator.onLine);
     const on = () => setOnline(true);
     const off = () => setOnline(false);
     window.addEventListener('online', on);

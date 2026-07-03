@@ -2,22 +2,40 @@ import { describe, it, expect, beforeEach, vi } from 'vitest';
 import express from 'express';
 import request from 'supertest';
 
-const { findManyProducto, findManyPedido, createPedido, updateManyPedido, findUniquePedido, findUniqueTenant, emitPedidoActualizado } =
-  vi.hoisted(() => ({
-    findManyProducto: vi.fn(),
-    findManyPedido: vi.fn(),
-    createPedido: vi.fn(),
-    updateManyPedido: vi.fn(),
-    findUniquePedido: vi.fn(),
-    findUniqueTenant: vi.fn(),
-    emitPedidoActualizado: vi.fn(),
-  }));
+const {
+  findManyProducto,
+  findManyPedido,
+  createPedido,
+  updateManyPedido,
+  findUniquePedido,
+  countPedido,
+  aggregatePedido,
+  findUniqueTenant,
+  emitPedidoActualizado,
+} = vi.hoisted(() => ({
+  findManyProducto: vi.fn(),
+  findManyPedido: vi.fn(),
+  createPedido: vi.fn(),
+  updateManyPedido: vi.fn(),
+  findUniquePedido: vi.fn(),
+  countPedido: vi.fn(),
+  aggregatePedido: vi.fn(),
+  findUniqueTenant: vi.fn(),
+  emitPedidoActualizado: vi.fn(),
+}));
 
 vi.mock('../lib/prisma', () => ({
   prisma: {
     tenant: { findUnique: findUniqueTenant },
     producto: { findMany: findManyProducto },
-    pedido: { findMany: findManyPedido, create: createPedido, updateMany: updateManyPedido, findUnique: findUniquePedido },
+    pedido: {
+      findMany: findManyPedido,
+      create: createPedido,
+      updateMany: updateManyPedido,
+      findUnique: findUniquePedido,
+      count: countPedido,
+      aggregate: aggregatePedido,
+    },
   },
 }));
 vi.mock('../lib/socket', () => ({ emitPedidoActualizado }));
@@ -52,6 +70,7 @@ interface FakePedido {
   estado: string;
   estadoPago: string;
   total: number;
+  creadoEn?: Date;
   items: Array<{ productoId: string; cantidad: number; precioUnit: number }>;
 }
 
@@ -90,6 +109,26 @@ beforeEach(() => {
     return { count: matches.length };
   });
   findUniquePedido.mockImplementation(async ({ where }: any) => pedidos.find((p) => p.id === where.id) ?? null);
+  countPedido.mockImplementation(async ({ where }: any) =>
+    pedidos.filter(
+      (p) =>
+        p.tenantId === where.tenantId &&
+        (p.creadoEn ?? new Date()) >= where.creadoEn.gte &&
+        p.estado !== where.estado.not
+    ).length
+  );
+  aggregatePedido.mockImplementation(async ({ where }: any) => {
+    const matches = pedidos.filter(
+      (p) =>
+        p.tenantId === where.tenantId &&
+        (p.creadoEn ?? new Date()) >= where.creadoEn.gte &&
+        p.estadoPago === where.estadoPago
+    );
+    return {
+      _sum: { total: matches.length ? matches.reduce((acc, p) => acc + p.total, 0) : null },
+      _count: matches.length,
+    };
+  });
 });
 
 describe('GET /pedidos', () => {
@@ -104,6 +143,40 @@ describe('GET /pedidos', () => {
     expect(res.status).toBe(200);
     expect(res.body).toHaveLength(1);
     expect(res.body[0].id).toBe('ped-a');
+  });
+});
+
+describe('GET /pedidos/metricas', () => {
+  it('cuenta pedidos de hoy (sin contar cancelados) y calcula ventas/ticket sobre los pagados', async () => {
+    const hoy = new Date();
+    pedidos.push(
+      { id: 'p1', tenantId: 'tenant-a', usuarioId: 'u1', estado: 'entregado', estadoPago: 'pagado', total: 100, creadoEn: hoy, items: [] },
+      { id: 'p2', tenantId: 'tenant-a', usuarioId: 'u1', estado: 'entregado', estadoPago: 'pagado', total: 300, creadoEn: hoy, items: [] },
+      { id: 'p3', tenantId: 'tenant-a', usuarioId: 'u1', estado: 'pendiente', estadoPago: 'pendiente', total: 50, creadoEn: hoy, items: [] },
+      { id: 'p4', tenantId: 'tenant-a', usuarioId: 'u1', estado: 'cancelado', estadoPago: 'pendiente', total: 999, creadoEn: hoy, items: [] },
+    );
+
+    const res = await request(buildApp()).get('/metricas').set('Authorization', auth('tenant-a'));
+
+    expect(res.status).toBe(200);
+    // p1, p2, p3 cuentan (activos); p4 no cuenta por cancelado
+    expect(res.body.pedidosHoy).toBe(3);
+    // solo p1 + p2 están pagados
+    expect(res.body.ventasTotales).toBe(400);
+    expect(res.body.ticketPromedio).toBe(200);
+  });
+
+  it('no mezcla pedidos de otro tenant ni de días anteriores', async () => {
+    const ayer = new Date();
+    ayer.setDate(ayer.getDate() - 1);
+    pedidos.push(
+      { id: 'p-ajeno', tenantId: 'tenant-b', usuarioId: 'u2', estado: 'entregado', estadoPago: 'pagado', total: 1000, creadoEn: new Date(), items: [] },
+      { id: 'p-viejo', tenantId: 'tenant-a', usuarioId: 'u1', estado: 'entregado', estadoPago: 'pagado', total: 500, creadoEn: ayer, items: [] },
+    );
+
+    const res = await request(buildApp()).get('/metricas').set('Authorization', auth('tenant-a'));
+
+    expect(res.body).toEqual({ pedidosHoy: 0, ventasTotales: 0, ticketPromedio: 0 });
   });
 });
 

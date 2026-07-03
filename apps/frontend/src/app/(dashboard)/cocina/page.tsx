@@ -3,6 +3,7 @@ import { useEffect, useState } from 'react';
 import { api } from '@/lib/api';
 import { useSocket } from '@/hooks/useSocket';
 import { usePedidoStore } from '@/stores/pedido.store';
+import { activarSonido, pedirPermisoNotificaciones } from '@/lib/notificaciones';
 
 type Estado = 'pendiente' | 'en_preparacion' | 'listo';
 
@@ -62,7 +63,14 @@ export default function CocinaPage() {
   const initPedidos = usePedidoStore((s) => s.initPedidos);
   const actualizarPedidoSocket = usePedidoStore((s) => s.actualizarPedidoSocket);
   const [avanzando, setAvanzando] = useState<string | null>(null);
+  const [notificacionesActivas, setNotificacionesActivas] = useState(false);
   const [, setTick] = useState(0);
+
+  async function activarNotificaciones() {
+    activarSonido();
+    await pedirPermisoNotificaciones();
+    setNotificacionesActivas(true);
+  }
 
   useEffect(() => {
     initPedidos([]);
@@ -95,9 +103,19 @@ export default function CocinaPage() {
     <div className="h-full flex flex-col gap-4">
       <div className="flex items-center justify-between">
         <h1 className="text-2xl font-bold text-gray-800">Pantalla de Cocina</h1>
-        <span className="text-sm text-gray-500">
-          {activos.length} pedido{activos.length !== 1 ? 's' : ''} activo{activos.length !== 1 ? 's' : ''}
-        </span>
+        <div className="flex items-center gap-3">
+          {!notificacionesActivas && (
+            <button
+              onClick={activarNotificaciones}
+              className="text-sm font-medium text-amber-700 border border-amber-300 rounded-lg px-3 py-1 hover:bg-amber-50"
+            >
+              🔔 Activar notificaciones
+            </button>
+          )}
+          <span className="text-sm text-gray-500">
+            {activos.length} pedido{activos.length !== 1 ? 's' : ''} activo{activos.length !== 1 ? 's' : ''}
+          </span>
+        </div>
       </div>
 
       <div className="flex-1 grid grid-cols-3 gap-4 min-h-0">
