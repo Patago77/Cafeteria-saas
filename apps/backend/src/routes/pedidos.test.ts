@@ -39,6 +39,7 @@ vi.mock('../lib/prisma', () => ({
   },
 }));
 vi.mock('../lib/socket', () => ({ emitPedidoActualizado }));
+vi.mock('../lib/crypto', () => ({ decryptToken: (v: string) => v }));
 
 import pedidosRouter from './pedidos';
 import { errorHandler } from '../middlewares/errorHandler';
@@ -61,6 +62,7 @@ interface FakeProducto {
   tenantId: string;
   precio: number;
   activo: boolean;
+  nombre?: string;
 }
 interface FakePedido {
   id: string;
@@ -71,19 +73,22 @@ interface FakePedido {
   estadoPago: string;
   total: number;
   creadoEn?: Date;
-  items: Array<{ productoId: string; cantidad: number; precioUnit: number }>;
+  items: Array<{ productoId: string; cantidad: number; precioUnit: number; producto: { nombre: string } }>;
 }
 
 let productos: FakeProducto[];
 let pedidos: FakePedido[];
 let seq: number;
+let tenantMpAccessToken: string | null;
 
 beforeEach(() => {
   productos = [];
   pedidos = [];
   seq = 0;
-  findUniqueTenant.mockResolvedValue({ estado: 'activo' });
+  tenantMpAccessToken = null;
+  findUniqueTenant.mockImplementation(async () => ({ estado: 'activo', mpAccessToken: tenantMpAccessToken }));
   emitPedidoActualizado.mockClear();
+  vi.unstubAllGlobals();
 
   findManyProducto.mockImplementation(async ({ where }: any) =>
     productos.filter((p) => where.id.in.includes(p.id) && p.tenantId === where.tenantId && p.activo === where.activo)
@@ -98,7 +103,10 @@ beforeEach(() => {
       estado: 'pendiente',
       estadoPago: 'pendiente',
       total: data.total,
-      items: data.items.create,
+      items: data.items.create.map((it: any) => ({
+        ...it,
+        producto: { nombre: productos.find((p) => p.id === it.productoId)?.nombre ?? 'Producto' },
+      })),
     };
     pedidos.push(pedido);
     return pedido;
@@ -209,6 +217,89 @@ describe('POST /pedidos', () => {
 
     expect(res.status).not.toBe(201);
     expect(pedidos).toHaveLength(0);
+  });
+
+  it('si el tenant no conectó Mercado Pago, el pedido se crea igual con mpInitPoint null', async () => {
+    productos.push({ id: 'prod-1', tenantId: 'tenant-a', precio: 100, activo: true });
+
+    const res = await request(buildApp())
+      .post('/')
+      .set('Authorization', auth('tenant-a'))
+      .send({ items: [{ productoId: 'prod-1', cantidad: 1 }] });
+
+    expect(res.status).toBe(201);
+    expect(res.body.mpInitPoint).toBeNull();
+  });
+
+  it('si el tenant tiene MP conectado, devuelve el link de pago de la preferencia creada', async () => {
+    productos.push({ id: 'prod-1', tenantId: 'tenant-a', precio: 100, activo: true });
+    tenantMpAccessToken = 'token-encriptado';
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockResolvedValue({
+        ok: true,
+        json: async () => ({ init_point: 'https://mp.com/pagar/xyz' }),
+      })
+    );
+
+    const res = await request(buildApp())
+      .post('/')
+      .set('Authorization', auth('tenant-a'))
+      .send({ items: [{ productoId: 'prod-1', cantidad: 1 }] });
+
+    expect(res.status).toBe(201);
+    expect(res.body.mpInitPoint).toBe('https://mp.com/pagar/xyz');
+  });
+});
+
+describe('PATCH /pedidos/:id/pago', () => {
+  it('marca el pago de un pedido propio', async () => {
+    pedidos.push({ id: 'ped-1', tenantId: 'tenant-a', usuarioId: 'u1', estado: 'entregado', estadoPago: 'pendiente', total: 100, items: [] });
+
+    const res = await request(buildApp())
+      .patch('/ped-1/pago')
+      .set('Authorization', auth('tenant-a', 'cajero'))
+      .send({ estadoPago: 'pagado' });
+
+    expect(res.status).toBe(200);
+    expect(pedidos[0].estadoPago).toBe('pagado');
+    expect(emitPedidoActualizado).toHaveBeenCalledWith('tenant-a', expect.objectContaining({ id: 'ped-1' }));
+  });
+
+  it('no marca el pago de un pedido de otro tenant', async () => {
+    pedidos.push({ id: 'ped-1', tenantId: 'tenant-b', usuarioId: 'u2', estado: 'entregado', estadoPago: 'pendiente', total: 100, items: [] });
+
+    const res = await request(buildApp())
+      .patch('/ped-1/pago')
+      .set('Authorization', auth('tenant-a', 'admin'))
+      .send({ estadoPago: 'pagado' });
+
+    expect(res.status).not.toBe(200);
+    expect(pedidos[0].estadoPago).toBe('pendiente');
+  });
+
+  it('bloquea con 403 a un mozo', async () => {
+    pedidos.push({ id: 'ped-1', tenantId: 'tenant-a', usuarioId: 'u1', estado: 'entregado', estadoPago: 'pendiente', total: 100, items: [] });
+
+    const res = await request(buildApp())
+      .patch('/ped-1/pago')
+      .set('Authorization', auth('tenant-a', 'mozo'))
+      .send({ estadoPago: 'pagado' });
+
+    expect(res.status).toBe(403);
+    expect(pedidos[0].estadoPago).toBe('pendiente');
+  });
+
+  it('rechaza un estadoPago que no sea un valor válido', async () => {
+    pedidos.push({ id: 'ped-1', tenantId: 'tenant-a', usuarioId: 'u1', estado: 'entregado', estadoPago: 'pendiente', total: 100, items: [] });
+
+    const res = await request(buildApp())
+      .patch('/ped-1/pago')
+      .set('Authorization', auth('tenant-a', 'admin'))
+      .send({ estadoPago: 'gratis' });
+
+    expect(res.status).not.toBe(200);
+    expect(pedidos[0].estadoPago).toBe('pendiente');
   });
 });
 

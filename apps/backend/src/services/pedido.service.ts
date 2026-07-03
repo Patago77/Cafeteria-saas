@@ -1,5 +1,6 @@
 import { prisma } from '../lib/prisma';
 import { emitPedidoActualizado } from '../lib/socket';
+import { MercadoPagoService } from './mercadopago.service';
 
 interface ItemInput {
   productoId: string;
@@ -66,7 +67,38 @@ export class PedidoService {
     });
 
     emitPedidoActualizado(tenantId, pedido);
-    return pedido;
+
+    // El cobro por Mercado Pago es opcional: si el tenant no conectó su
+    // cuenta (o falla la llamada a la API de MP), el pedido igual se crea
+    // y se puede cobrar en efectivo/marcar pagado a mano.
+    let mpInitPoint: string | null = null;
+    try {
+      const preferencia = await MercadoPagoService.crearPreferencia(
+        tenantId,
+        pedido.id,
+        pedido.items.map((item) => ({
+          title: item.producto.nombre,
+          unit_price: Number(item.precioUnit),
+          quantity: item.cantidad,
+        }))
+      );
+      mpInitPoint = preferencia.init_point ?? preferencia.sandbox_init_point ?? null;
+    } catch {
+      mpInitPoint = null;
+    }
+
+    return { ...pedido, mpInitPoint };
+  }
+
+  static async marcarPago(pedidoId: string, tenantId: string, estadoPago: string) {
+    const res = await prisma.pedido.updateMany({
+      where: { id: pedidoId, tenantId },
+      data: { estadoPago: estadoPago as never },
+    });
+    if (res.count === 0) throw new Error('Pedido no encontrado');
+    const actualizado = await prisma.pedido.findUnique({ where: { id: pedidoId } });
+    emitPedidoActualizado(tenantId, actualizado);
+    return actualizado;
   }
 
   static async actualizarEstado(pedidoId: string, tenantId: string, estado: string) {

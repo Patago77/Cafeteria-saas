@@ -9,16 +9,19 @@ export default function POSPage() {
   const { crearPedido, loading } = usePedidos();
   const [mesa, setMesa] = useState('');
   const [feedback, setFeedback] = useState<{ tipo: 'ok' | 'error'; msg: string } | null>(null);
+  const [linkPago, setLinkPago] = useState<string | null>(null);
 
   const total = carrito.reduce((acc, i) => acc + i.precioUnit * i.cantidad, 0);
 
   async function handleConfirmar() {
     setFeedback(null);
+    setLinkPago(null);
     try {
-      await crearPedido(carrito, mesa || undefined);
+      const pedido = await crearPedido(carrito, mesa || undefined);
       limpiarCarrito();
       setMesa('');
       setFeedback({ tipo: 'ok', msg: '¡Pedido enviado a cocina!' });
+      if (pedido?.mpInitPoint) setLinkPago(pedido.mpInitPoint);
       setTimeout(() => setFeedback(null), 3000);
     } catch (err: unknown) {
       setFeedback({ tipo: 'error', msg: err instanceof Error ? err.message : 'Error al confirmar' });
@@ -77,6 +80,17 @@ export default function POSPage() {
             }`}>
               {feedback.msg}
             </p>
+          )}
+
+          {linkPago && (
+            <a
+              href={linkPago}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="block w-full text-center bg-sky-500 text-white py-2.5 rounded-lg font-semibold hover:bg-sky-600 transition"
+            >
+              💳 Cobrar con Mercado Pago
+            </a>
           )}
 
           <button

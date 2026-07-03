@@ -42,6 +42,11 @@ npm run typecheck    # verificar tipos sin compilar
 - **Gotcha real que nos pasó:** los mocks de Vitest (`vi.fn()`) NO limpian su historial de llamadas entre tests solos por reasignar `.mockImplementation()` en `beforeEach` — si algún test hace `expect(mockFn).not.toHaveBeenCalled()`, hay que además `.mockReset()`/`.mockClear()` ese mock en el `beforeEach`, o un test anterior deja falsos positivos.
 - `npm run test` desde la raíz llama al workspace del backend directo (no vía `turbo run test`) — en esta máquina Windows, `turbo run test` falla en silencio por una interacción rara entre turbo y el arranque de Vitest 4/Vite; no es un problema de los tests en sí.
 
+## Cobro de pedidos
+- `POST /api/pedidos` intenta crear una preferencia de Mercado Pago (`MercadoPagoService.crearPreferencia`) y devuelve `mpInitPoint` (el link de pago) en la respuesta si el tenant tiene MP conectado. Si no está conectado o falla la llamada, `mpInitPoint` es `null` y el pedido se crea igual — el cobro por MP es opcional, nunca bloquea la creación del pedido.
+- `PATCH /api/pedidos/:id/pago` (`admin`/`cajero`) marca `estadoPago` a mano (`pendiente`/`pagado`/`reembolsado`) — es el camino para efectivo/transferencia u otros medios que no pasan por MP.
+- Antes de esto, `estadoPago` solo se podía volver `pagado` vía el webhook de MP — si un tenant no tenía MP conectado, ningún pedido podía marcarse como pagado nunca. Si se toca este flujo de nuevo, tener en cuenta que son dos caminos independientes hacia el mismo campo.
+
 ## Email (`email.service.ts`)
 - Usa `nodemailer`. Si `SMTP_HOST` no está seteado en el entorno, `EmailService.send` no manda nada de verdad — solo loguea `[Email mock] ...` a consola (modo dev sin credenciales).
 - Con `SMTP_HOST`/`SMTP_PORT`/`SMTP_USER`/`SMTP_PASS`/`EMAIL_FROM` seteados en `.env`, manda el mail real. **Las credenciales del proveedor SMTP las tiene que conseguir/configurar el usuario** (Gmail app password, SendGrid, Resend, Mailgun, etc.) — el código ya está listo para cualquiera de esos, no hace falta tocar `email.service.ts` de nuevo.

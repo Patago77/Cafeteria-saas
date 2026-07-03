@@ -1,6 +1,11 @@
 import { prisma } from '../lib/prisma';
 import { decryptToken } from '../lib/crypto';
 
+interface PreferenciaMP {
+  init_point?: string;
+  sandbox_init_point?: string;
+}
+
 export class MercadoPagoService {
   private static async getAccessToken(tenantId: string): Promise<string> {
     const tenant = await prisma.tenant.findUnique({
@@ -11,7 +16,11 @@ export class MercadoPagoService {
     return decryptToken(tenant.mpAccessToken);
   }
 
-  static async crearPreferencia(tenantId: string, pedidoId: string, items: Array<{ title: string; unit_price: number; quantity: number }>) {
+  static async crearPreferencia(
+    tenantId: string,
+    pedidoId: string,
+    items: Array<{ title: string; unit_price: number; quantity: number }>
+  ): Promise<PreferenciaMP> {
     const accessToken = await this.getAccessToken(tenantId);
     const response = await fetch('https://api.mercadopago.com/checkout/preferences', {
       method: 'POST',
@@ -30,6 +39,6 @@ export class MercadoPagoService {
       }),
     });
     if (!response.ok) throw new Error('Error creando preferencia MP');
-    return response.json();
+    return response.json() as Promise<PreferenciaMP>;
   }
 }

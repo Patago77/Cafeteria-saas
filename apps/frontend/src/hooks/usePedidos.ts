@@ -5,7 +5,16 @@ import { guardarPedidoLocal, getPedidosLocales } from '@/lib/db-local';
 import { useConexion } from './useConexion';
 
 interface Item { productoId: string; cantidad: number; notas?: string; nombre: string; precioUnit: number }
-interface Pedido { id: string; mesa?: string | null; estado: string; estadoPago: string; total: number; creadoEn: string; items: { nombre: string; cantidad: number }[] }
+interface Pedido {
+  id: string;
+  mesa?: string | null;
+  estado: string;
+  estadoPago: string;
+  total: number;
+  creadoEn: string;
+  items: { nombre: string; cantidad: number }[];
+  mpInitPoint?: string | null;
+}
 
 export function usePedidos(filtros?: { estado?: string }) {
   const [pedidos, setPedidos] = useState<Pedido[]>([]);
@@ -56,5 +65,10 @@ export function usePedidos(filtros?: { estado?: string }) {
     setPedidos((prev) => prev.map((p) => p.id === pedidoId ? { ...p, estado } : p));
   }, []);
 
-  return { pedidos, loading, crearPedido, actualizarEstado };
+  const marcarPago = useCallback(async (pedidoId: string, estadoPago: string) => {
+    await api.patch(`/pedidos/${pedidoId}/pago`, { estadoPago });
+    setPedidos((prev) => prev.map((p) => p.id === pedidoId ? { ...p, estadoPago } : p));
+  }, []);
+
+  return { pedidos, loading, crearPedido, actualizarEstado, marcarPago };
 }

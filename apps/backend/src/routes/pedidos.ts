@@ -68,6 +68,18 @@ router.patch('/:id/estado', async (req, res, next) => {
   }
 });
 
+// PATCH /api/pedidos/:id/pago — marca el pago manualmente (efectivo, etc.)
+router.patch('/:id/pago', requiereRol('admin', 'cajero'), async (req, res, next) => {
+  try {
+    const { tenantId } = req as unknown as AuthRequest;
+    const { estadoPago } = z.object({ estadoPago: z.enum(['pendiente', 'pagado', 'reembolsado']) }).parse(req.body);
+    const pedido = await PedidoService.marcarPago(req.params.id, tenantId, estadoPago);
+    res.json(pedido);
+  } catch (err) {
+    next(err);
+  }
+});
+
 // DELETE /api/pedidos/:id — cancela un pedido (solo admin)
 router.delete('/:id', requiereRol('admin'), async (req, res, next) => {
   try {

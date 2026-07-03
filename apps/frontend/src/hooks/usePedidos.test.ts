@@ -102,3 +102,20 @@ describe('actualizarEstado', () => {
     expect(result.current.pedidos[0].estado).toBe('listo');
   });
 });
+
+describe('marcarPago', () => {
+  it('llama al PATCH de pago correcto y actualiza el estadoPago en el estado local', async () => {
+    get.mockResolvedValue([{ id: 'ped-1', estado: 'entregado', estadoPago: 'pendiente' }]);
+    patch.mockResolvedValue({});
+
+    const { result } = renderHook(() => usePedidos());
+    await waitFor(() => expect(result.current.pedidos).toHaveLength(1));
+
+    await act(async () => {
+      await result.current.marcarPago('ped-1', 'pagado');
+    });
+
+    expect(patch).toHaveBeenCalledWith('/pedidos/ped-1/pago', { estadoPago: 'pagado' });
+    expect(result.current.pedidos[0].estadoPago).toBe('pagado');
+  });
+});

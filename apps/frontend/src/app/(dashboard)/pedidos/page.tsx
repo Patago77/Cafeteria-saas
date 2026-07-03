@@ -4,7 +4,7 @@ import { usePedidos } from '@/hooks/usePedidos';
 const ESTADOS = ['pendiente', 'en_preparacion', 'listo', 'entregado', 'cancelado'] as const;
 
 export default function PedidosPage() {
-  const { pedidos, loading } = usePedidos();
+  const { pedidos, loading, marcarPago } = usePedidos();
 
   if (loading) return <p className="text-gray-500">Cargando pedidos...</p>;
 
@@ -15,7 +15,7 @@ export default function PedidosPage() {
         <table className="w-full text-sm">
           <thead className="bg-gray-50">
             <tr>
-              {['ID', 'Mesa', 'Total', 'Estado', 'Pago', 'Hora'].map((h) => (
+              {['ID', 'Mesa', 'Total', 'Estado', 'Pago', 'Hora', ''].map((h) => (
                 <th key={h} className="px-4 py-3 text-left text-gray-600 font-medium">{h}</th>
               ))}
             </tr>
@@ -32,6 +32,16 @@ export default function PedidosPage() {
                 <td className="px-4 py-3 capitalize">{p.estadoPago}</td>
                 <td className="px-4 py-3 text-gray-400">
                   {new Date(p.creadoEn).toLocaleTimeString('es-AR', { hour: '2-digit', minute: '2-digit' })}
+                </td>
+                <td className="px-4 py-3">
+                  {p.estadoPago !== 'pagado' && (
+                    <button
+                      onClick={() => marcarPago(p.id, 'pagado')}
+                      className="text-xs font-medium text-green-700 border border-green-300 rounded-lg px-2 py-1 hover:bg-green-50"
+                    >
+                      Marcar pagado
+                    </button>
+                  )}
                 </td>
               </tr>
             ))}
