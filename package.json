@@ -9,7 +9,7 @@
   "scripts": {
     "dev": "concurrently --names \"backend,frontend\" --prefix-colors \"yellow,cyan\" \"npm run dev --workspace=apps/backend\" \"npm run dev --workspace=apps/frontend\"",
     "build": "turbo run build",
-    "test": "npm run test --workspace=apps/backend",
+    "test": "npm run test --workspaces --if-present",
     "lint": "turbo run lint",
     "typecheck": "turbo run typecheck",
     "db:generate": "turbo run db:generate",
@@ -22,6 +22,10 @@
     "prettier": "^3.2.0",
     "turbo": "^2.0.0",
     "typescript": "^5.4.0"
+  },
+  "overrides": {
+    "react": "^19.0.0",
+    "react-dom": "^19.0.0"
   },
   "packageManager": "npm@10.5.0",
   "engines": {
