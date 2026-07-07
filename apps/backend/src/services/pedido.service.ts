@@ -1,6 +1,7 @@
 import { prisma } from '../lib/prisma';
 import { emitPedidoActualizado } from '../lib/socket';
 import { MercadoPagoService } from './mercadopago.service';
+import { CajaService } from './caja.service';
 
 interface ItemInput {
   productoId: string;
@@ -9,23 +10,29 @@ interface ItemInput {
 }
 
 interface CrearPedidoInput {
+  canal?: string;
   mesa?: string;
+  direccionEntrega?: string;
+  telefonoEntrega?: string;
+  notasEntrega?: string;
   items: ItemInput[];
   notas?: string;
 }
 
 export class PedidoService {
-  static async listar(tenantId: string, filtros: { estado?: string; fecha?: string; activos?: boolean }) {
+  static async listar(tenantId: string, filtros: { estado?: string; fecha?: string; activos?: boolean; canal?: string }) {
     return prisma.pedido.findMany({
       where: {
         tenantId,
         ...(filtros.activos && { estado: { in: ['pendiente', 'en_preparacion', 'listo'] as never[] } }),
         ...(!filtros.activos && filtros.estado && { estado: filtros.estado as never }),
         ...(filtros.fecha && { creadoEn: { gte: new Date(filtros.fecha) } }),
+        ...(filtros.canal && { canal: filtros.canal as never }),
       },
       include: {
         items: { include: { producto: { select: { nombre: true } } } },
         usuario: { select: { nombre: true } },
+        repartidor: { select: { nombre: true } },
       },
       orderBy: { creadoEn: 'desc' },
     });
@@ -51,7 +58,12 @@ export class PedidoService {
       data: {
         tenantId,
         usuarioId: userId,
+        canal: (input.canal ?? 'salon') as never,
         mesa: input.mesa,
+        direccionEntrega: input.direccionEntrega,
+        telefonoEntrega: input.telefonoEntrega,
+        notasEntrega: input.notasEntrega,
+        estadoEntrega: input.canal === 'delivery' ? ('pendiente' as never) : undefined,
         notas: input.notas,
         total,
         items: {
@@ -91,13 +103,20 @@ export class PedidoService {
   }
 
   static async marcarPago(pedidoId: string, tenantId: string, estadoPago: string) {
-    const res = await prisma.pedido.updateMany({
+    const anterior = await prisma.pedido.findFirst({ where: { id: pedidoId, tenantId } });
+    if (!anterior) throw new Error('Pedido no encontrado');
+
+    await prisma.pedido.updateMany({
       where: { id: pedidoId, tenantId },
       data: { estadoPago: estadoPago as never },
     });
-    if (res.count === 0) throw new Error('Pedido no encontrado');
     const actualizado = await prisma.pedido.findUnique({ where: { id: pedidoId } });
     emitPedidoActualizado(tenantId, actualizado);
+
+    if (estadoPago === 'pagado' && anterior.estadoPago !== 'pagado') {
+      await CajaService.registrarIngresoPorPedido(tenantId, pedidoId, actualizado!.mesa, Number(actualizado!.total));
+    }
+
     return actualizado;
   }
 
@@ -108,6 +127,30 @@ export class PedidoService {
     });
     if (pedido.count === 0) throw new Error('Pedido no encontrado');
     const actualizado = await prisma.pedido.findUnique({ where: { id: pedidoId } });
+    emitPedidoActualizado(tenantId, actualizado);
+    return actualizado;
+  }
+
+  static async actualizarEntrega(
+    pedidoId: string,
+    tenantId: string,
+    cambios: { estadoEntrega?: string; repartidorId?: string | null }
+  ) {
+    const anterior = await prisma.pedido.findFirst({ where: { id: pedidoId, tenantId } });
+    if (!anterior) throw new Error('Pedido no encontrado');
+    if (anterior.canal !== 'delivery') throw new Error('El pedido no es de delivery');
+
+    await prisma.pedido.updateMany({
+      where: { id: pedidoId, tenantId },
+      data: {
+        ...(cambios.estadoEntrega && { estadoEntrega: cambios.estadoEntrega as never }),
+        ...(cambios.repartidorId !== undefined && { repartidorId: cambios.repartidorId }),
+      },
+    });
+    const actualizado = await prisma.pedido.findUnique({
+      where: { id: pedidoId },
+      include: { repartidor: { select: { nombre: true } } },
+    });
     emitPedidoActualizado(tenantId, actualizado);
     return actualizado;
   }

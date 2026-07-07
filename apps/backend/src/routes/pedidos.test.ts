@@ -8,9 +8,12 @@ const {
   createPedido,
   updateManyPedido,
   findUniquePedido,
+  findFirstPedido,
   countPedido,
   aggregatePedido,
   findUniqueTenant,
+  findFirstCaja,
+  createMovimientoCaja,
   emitPedidoActualizado,
 } = vi.hoisted(() => ({
   findManyProducto: vi.fn(),
@@ -18,9 +21,12 @@ const {
   createPedido: vi.fn(),
   updateManyPedido: vi.fn(),
   findUniquePedido: vi.fn(),
+  findFirstPedido: vi.fn(),
   countPedido: vi.fn(),
   aggregatePedido: vi.fn(),
   findUniqueTenant: vi.fn(),
+  findFirstCaja: vi.fn(),
+  createMovimientoCaja: vi.fn(),
   emitPedidoActualizado: vi.fn(),
 }));
 
@@ -28,11 +34,14 @@ vi.mock('../lib/prisma', () => ({
   prisma: {
     tenant: { findUnique: findUniqueTenant },
     producto: { findMany: findManyProducto },
+    caja: { findFirst: findFirstCaja },
+    movimientoCaja: { create: createMovimientoCaja },
     pedido: {
       findMany: findManyPedido,
       create: createPedido,
       updateMany: updateManyPedido,
       findUnique: findUniquePedido,
+      findFirst: findFirstPedido,
       count: countPedido,
       aggregate: aggregatePedido,
     },
@@ -117,6 +126,14 @@ beforeEach(() => {
     return { count: matches.length };
   });
   findUniquePedido.mockImplementation(async ({ where }: any) => pedidos.find((p) => p.id === where.id) ?? null);
+  findFirstPedido.mockImplementation(async ({ where }: any) => {
+    const encontrado = pedidos.find((p) => p.id === where.id && p.tenantId === where.tenantId);
+    // Copia, no la referencia viva: como en Prisma real, "anterior" no debe
+    // mutar cuando el updateMany posterior modifique el objeto en la tienda fake.
+    return encontrado ? { ...encontrado } : null;
+  });
+  findFirstCaja.mockReset().mockResolvedValue(null);
+  createMovimientoCaja.mockReset().mockImplementation(async ({ data }: any) => ({ id: `mov-${++seq}`, ...data }));
   countPedido.mockImplementation(async ({ where }: any) =>
     pedidos.filter(
       (p) =>
@@ -276,6 +293,45 @@ describe('PATCH /pedidos/:id/pago', () => {
 
     expect(res.status).not.toBe(200);
     expect(pedidos[0].estadoPago).toBe('pendiente');
+  });
+
+  it('si hay una caja activa, registra un ingreso con la mesa y el pedidoId', async () => {
+    findFirstCaja.mockResolvedValue({ id: 'caja-1', tenantId: 'tenant-a', activo: true });
+    pedidos.push({ id: 'ped-1', tenantId: 'tenant-a', usuarioId: 'u1', mesa: '7', estado: 'entregado', estadoPago: 'pendiente', total: 250, items: [] });
+
+    await request(buildApp())
+      .patch('/ped-1/pago')
+      .set('Authorization', auth('tenant-a', 'cajero'))
+      .send({ estadoPago: 'pagado' });
+
+    expect(createMovimientoCaja).toHaveBeenCalledWith({
+      data: { cajaId: 'caja-1', pedidoId: 'ped-1', tipo: 'ingreso', monto: 250, notas: 'Pedido mesa 7' },
+    });
+  });
+
+  it('si el pedido ya estaba pagado, no duplica el ingreso en caja', async () => {
+    findFirstCaja.mockResolvedValue({ id: 'caja-1', tenantId: 'tenant-a', activo: true });
+    pedidos.push({ id: 'ped-1', tenantId: 'tenant-a', usuarioId: 'u1', estado: 'entregado', estadoPago: 'pagado', total: 250, items: [] });
+
+    await request(buildApp())
+      .patch('/ped-1/pago')
+      .set('Authorization', auth('tenant-a', 'cajero'))
+      .send({ estadoPago: 'pagado' });
+
+    expect(createMovimientoCaja).not.toHaveBeenCalled();
+  });
+
+  it('si no hay ninguna caja creada, marca el pago igual sin romper', async () => {
+    pedidos.push({ id: 'ped-1', tenantId: 'tenant-a', usuarioId: 'u1', estado: 'entregado', estadoPago: 'pendiente', total: 100, items: [] });
+
+    const res = await request(buildApp())
+      .patch('/ped-1/pago')
+      .set('Authorization', auth('tenant-a', 'cajero'))
+      .send({ estadoPago: 'pagado' });
+
+    expect(res.status).toBe(200);
+    expect(pedidos[0].estadoPago).toBe('pagado');
+    expect(createMovimientoCaja).not.toHaveBeenCalled();
   });
 
   it('bloquea con 403 a un mozo', async () => {

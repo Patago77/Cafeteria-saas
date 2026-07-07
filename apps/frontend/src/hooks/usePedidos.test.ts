@@ -66,10 +66,17 @@ describe('crearPedido', () => {
     await waitFor(() => expect(get).toHaveBeenCalled());
 
     await act(async () => {
-      await result.current.crearPedido([{ productoId: 'p1', cantidad: 1, nombre: 'Café', precioUnit: 100 }], '5');
+      await result.current.crearPedido([{ productoId: 'p1', cantidad: 1, nombre: 'Café', precioUnit: 100 }], { mesa: '5' });
     });
 
-    expect(post).toHaveBeenCalledWith('/pedidos', { mesa: '5', items: [{ productoId: 'p1', cantidad: 1, notas: undefined }] });
+    expect(post).toHaveBeenCalledWith('/pedidos', {
+      canal: 'salon',
+      mesa: '5',
+      direccionEntrega: undefined,
+      telefonoEntrega: undefined,
+      notasEntrega: undefined,
+      items: [{ productoId: 'p1', cantidad: 1, notas: undefined }],
+    });
     expect(result.current.pedidos[0].id).toBe('ped-nuevo');
   });
 
@@ -79,7 +86,7 @@ describe('crearPedido', () => {
     await waitFor(() => expect(result.current.pedidos).toEqual([]));
 
     await act(async () => {
-      await result.current.crearPedido([{ productoId: 'p1', cantidad: 2, nombre: 'Café', precioUnit: 100 }], '5');
+      await result.current.crearPedido([{ productoId: 'p1', cantidad: 2, nombre: 'Café', precioUnit: 100 }], { mesa: '5' });
     });
 
     // queda persistido para sincronizar después...

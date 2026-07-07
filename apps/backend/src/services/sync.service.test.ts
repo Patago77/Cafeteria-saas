@@ -1,17 +1,23 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
-const { findFirst, updateMany, findUnique, decryptToken, emitPedidoActualizado } = vi.hoisted(() => ({
-  findFirst: vi.fn(),
-  updateMany: vi.fn(),
-  findUnique: vi.fn(),
-  decryptToken: vi.fn().mockReturnValue('access-token-plano'),
-  emitPedidoActualizado: vi.fn(),
-}));
+const { findFirst, updateMany, findUnique, findFirstPedido, findFirstCaja, createMovimientoCaja, decryptToken, emitPedidoActualizado } =
+  vi.hoisted(() => ({
+    findFirst: vi.fn(),
+    updateMany: vi.fn(),
+    findUnique: vi.fn(),
+    findFirstPedido: vi.fn(),
+    findFirstCaja: vi.fn(),
+    createMovimientoCaja: vi.fn(),
+    decryptToken: vi.fn().mockReturnValue('access-token-plano'),
+    emitPedidoActualizado: vi.fn(),
+  }));
 
 vi.mock('../lib/prisma', () => ({
   prisma: {
     tenant: { findFirst },
-    pedido: { updateMany, findUnique },
+    caja: { findFirst: findFirstCaja },
+    movimientoCaja: { create: createMovimientoCaja },
+    pedido: { updateMany, findUnique, findFirst: findFirstPedido },
   },
 }));
 vi.mock('../lib/crypto', () => ({ decryptToken }));
@@ -26,6 +32,9 @@ describe('SyncService.procesarPagoMP', () => {
     findUnique.mockReset();
     decryptToken.mockClear();
     emitPedidoActualizado.mockClear();
+    findFirstPedido.mockReset();
+    findFirstCaja.mockReset().mockResolvedValue(null);
+    createMovimientoCaja.mockClear();
     vi.unstubAllGlobals();
   });
 
@@ -35,6 +44,7 @@ describe('SyncService.procesarPagoMP', () => {
       ok: true,
       json: async () => ({ external_reference: 'pedido-1', status: 'approved' }),
     }));
+    findFirstPedido.mockResolvedValue({ id: 'pedido-1', tenantId: 'tenant-correcto', estadoPago: 'pendiente' });
     updateMany.mockResolvedValue({ count: 1 });
     findUnique.mockResolvedValue({ id: 'pedido-1', estadoPago: 'pagado' });
 
@@ -59,6 +69,7 @@ describe('SyncService.procesarPagoMP', () => {
 
   it('actualiza el pedido del tenant correcto y emite el evento cuando el pago está aprobado', async () => {
     findFirst.mockResolvedValue({ id: 'tenant-correcto', mpAccessToken: 'enc-token' });
+    findFirstPedido.mockResolvedValue({ id: 'pedido-1', tenantId: 'tenant-correcto', estadoPago: 'pendiente' });
     vi.stubGlobal('fetch', vi.fn().mockResolvedValue({
       ok: true,
       json: async () => ({ external_reference: 'pedido-1', status: 'approved' }),
@@ -77,6 +88,7 @@ describe('SyncService.procesarPagoMP', () => {
 
   it('no emite evento si el pedido no pertenece a ese tenant (updateMany.count === 0)', async () => {
     findFirst.mockResolvedValue({ id: 'tenant-correcto', mpAccessToken: 'enc-token' });
+    findFirstPedido.mockResolvedValue({ id: 'pedido-de-otro-tenant', tenantId: 'tenant-correcto', estadoPago: 'pendiente' });
     vi.stubGlobal('fetch', vi.fn().mockResolvedValue({
       ok: true,
       json: async () => ({ external_reference: 'pedido-de-otro-tenant', status: 'approved' }),
@@ -86,5 +98,52 @@ describe('SyncService.procesarPagoMP', () => {
     await SyncService.procesarPagoMP('payment-1', 'mp-user-correcto');
 
     expect(emitPedidoActualizado).not.toHaveBeenCalled();
+  });
+
+  it('no procesa nada si el pedido del external_reference no existe para ese tenant', async () => {
+    findFirst.mockResolvedValue({ id: 'tenant-correcto', mpAccessToken: 'enc-token' });
+    findFirstPedido.mockResolvedValue(null);
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({ external_reference: 'pedido-inexistente', status: 'approved' }),
+    }));
+
+    await SyncService.procesarPagoMP('payment-1', 'mp-user-correcto');
+
+    expect(updateMany).not.toHaveBeenCalled();
+  });
+
+  it('registra un ingreso en caja cuando el pago pasa a aprobado y hay una caja activa', async () => {
+    findFirst.mockResolvedValue({ id: 'tenant-correcto', mpAccessToken: 'enc-token' });
+    findFirstPedido.mockResolvedValue({ id: 'pedido-1', tenantId: 'tenant-correcto', estadoPago: 'pendiente' });
+    findFirstCaja.mockResolvedValue({ id: 'caja-1', tenantId: 'tenant-correcto', activo: true });
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({ external_reference: 'pedido-1', status: 'approved' }),
+    }));
+    updateMany.mockResolvedValue({ count: 1 });
+    findUnique.mockResolvedValue({ id: 'pedido-1', mesa: '3', total: 500, estadoPago: 'pagado' });
+
+    await SyncService.procesarPagoMP('payment-1', 'mp-user-correcto');
+
+    expect(createMovimientoCaja).toHaveBeenCalledWith({
+      data: { cajaId: 'caja-1', pedidoId: 'pedido-1', tipo: 'ingreso', monto: 500, notas: 'Pedido mesa 3' },
+    });
+  });
+
+  it('no duplica el ingreso en caja si el pedido ya estaba pagado (reintento de webhook)', async () => {
+    findFirst.mockResolvedValue({ id: 'tenant-correcto', mpAccessToken: 'enc-token' });
+    findFirstPedido.mockResolvedValue({ id: 'pedido-1', tenantId: 'tenant-correcto', estadoPago: 'pagado' });
+    findFirstCaja.mockResolvedValue({ id: 'caja-1', tenantId: 'tenant-correcto', activo: true });
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({ external_reference: 'pedido-1', status: 'approved' }),
+    }));
+    updateMany.mockResolvedValue({ count: 1 });
+    findUnique.mockResolvedValue({ id: 'pedido-1', mesa: '3', total: 500, estadoPago: 'pagado' });
+
+    await SyncService.procesarPagoMP('payment-1', 'mp-user-correcto');
+
+    expect(createMovimientoCaja).not.toHaveBeenCalled();
   });
 });

@@ -4,22 +4,44 @@ import { MenuGrid } from '@/components/MenuGrid';
 import { usePedidos } from '@/hooks/usePedidos';
 import { usePedidoStore } from '@/stores/pedido.store';
 
+type Canal = 'salon' | 'take_away' | 'delivery';
+
+const CANALES: { valor: Canal; label: string }[] = [
+  { valor: 'salon', label: '🍽️ Salón' },
+  { valor: 'take_away', label: '🥡 Take away' },
+  { valor: 'delivery', label: '🛵 Delivery' },
+];
+
 export default function POSPage() {
   const { carrito, agregarItem, quitarItem, limpiarCarrito } = usePedidoStore();
   const { crearPedido, loading } = usePedidos();
+  const [canal, setCanal] = useState<Canal>('salon');
   const [mesa, setMesa] = useState('');
+  const [direccionEntrega, setDireccionEntrega] = useState('');
+  const [telefonoEntrega, setTelefonoEntrega] = useState('');
   const [feedback, setFeedback] = useState<{ tipo: 'ok' | 'error'; msg: string } | null>(null);
   const [linkPago, setLinkPago] = useState<string | null>(null);
 
   const total = carrito.reduce((acc, i) => acc + i.precioUnit * i.cantidad, 0);
 
+  function limpiarFormulario() {
+    setMesa('');
+    setDireccionEntrega('');
+    setTelefonoEntrega('');
+  }
+
   async function handleConfirmar() {
     setFeedback(null);
     setLinkPago(null);
     try {
-      const pedido = await crearPedido(carrito, mesa || undefined);
+      const pedido = await crearPedido(carrito, {
+        canal,
+        mesa: canal === 'salon' ? mesa || undefined : undefined,
+        direccionEntrega: canal === 'delivery' ? direccionEntrega : undefined,
+        telefonoEntrega: canal === 'delivery' ? telefonoEntrega || undefined : undefined,
+      });
       limpiarCarrito();
-      setMesa('');
+      limpiarFormulario();
       setFeedback({ tipo: 'ok', msg: '¡Pedido enviado a cocina!' });
       if (pedido?.mpInitPoint) setLinkPago(pedido.mpInitPoint);
       setTimeout(() => setFeedback(null), 3000);
@@ -38,13 +60,50 @@ export default function POSPage() {
       <div className="w-72 bg-white rounded-xl shadow p-4 flex flex-col gap-3">
         <h2 className="font-semibold text-lg">Pedido actual</h2>
 
-        <input
-          type="text"
-          placeholder="Mesa (opcional)"
-          value={mesa}
-          onChange={(e) => setMesa(e.target.value)}
-          className="border border-gray-300 rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-amber-400"
-        />
+        <div className="flex gap-1">
+          {CANALES.map((c) => (
+            <button
+              key={c.valor}
+              onClick={() => setCanal(c.valor)}
+              className={`flex-1 text-xs font-medium py-1.5 rounded-lg border transition ${
+                canal === c.valor
+                  ? 'bg-amber-600 text-white border-amber-600'
+                  : 'bg-white text-gray-600 border-gray-200 hover:bg-gray-50'
+              }`}
+            >
+              {c.label}
+            </button>
+          ))}
+        </div>
+
+        {canal === 'salon' && (
+          <input
+            type="text"
+            placeholder="Mesa (opcional)"
+            value={mesa}
+            onChange={(e) => setMesa(e.target.value)}
+            className="border border-gray-300 rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-amber-400"
+          />
+        )}
+
+        {canal === 'delivery' && (
+          <div className="space-y-2">
+            <input
+              type="text"
+              placeholder="Dirección de entrega *"
+              value={direccionEntrega}
+              onChange={(e) => setDireccionEntrega(e.target.value)}
+              className="w-full border border-gray-300 rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-amber-400"
+            />
+            <input
+              type="text"
+              placeholder="Teléfono de contacto"
+              value={telefonoEntrega}
+              onChange={(e) => setTelefonoEntrega(e.target.value)}
+              className="w-full border border-gray-300 rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-amber-400"
+            />
+          </div>
+        )}
 
         <div className="flex-1 space-y-2 overflow-y-auto min-h-0">
           {carrito.length === 0 && (
@@ -95,7 +154,7 @@ export default function POSPage() {
 
           <button
             onClick={handleConfirmar}
-            disabled={carrito.length === 0 || loading}
+            disabled={carrito.length === 0 || loading || (canal === 'delivery' && !direccionEntrega)}
             className="w-full bg-amber-600 text-white py-2.5 rounded-lg font-semibold disabled:opacity-50 hover:bg-amber-700 transition"
           >
             {loading ? 'Enviando...' : 'Confirmar pedido'}

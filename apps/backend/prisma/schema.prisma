@@ -33,6 +33,18 @@ enum EstadoTenant {
   trial
 }
 
+enum CanalPedido {
+  salon
+  take_away
+  delivery
+}
+
+enum EstadoEntrega {
+  pendiente
+  en_camino
+  entregado
+}
+
 model Tenant {
   id              String       @id @default(cuid())
   nombre          String
@@ -62,8 +74,9 @@ model Usuario {
   activo       Boolean    @default(true)
   creadoEn     DateTime   @default(now())
 
-  tenant  Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
-  pedidos Pedido[]
+  tenant          Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  pedidos         Pedido[] @relation("PedidoCreadoPor")
+  pedidosDelivery Pedido[] @relation("PedidoRepartidor")
 
   @@unique([tenantId, email])
 }
@@ -89,6 +102,7 @@ model Pedido {
   tenantId    String
   usuarioId   String?
   mesa        String?
+  canal       CanalPedido  @default(salon)
   estado      EstadoPedido @default(pendiente)
   estadoPago  EstadoPago   @default(pendiente)
   total       Decimal      @db.Decimal(10, 2)
@@ -97,9 +111,18 @@ model Pedido {
   creadoEn    DateTime     @default(now())
   actualizadoEn DateTime   @updatedAt
 
-  tenant  Tenant       @relation(fields: [tenantId], references: [id], onDelete: Cascade)
-  usuario Usuario?     @relation(fields: [usuarioId], references: [id])
-  items   ItemPedido[]
+  // Solo aplican cuando canal = delivery
+  direccionEntrega String?
+  telefonoEntrega  String?
+  notasEntrega     String?
+  estadoEntrega    EstadoEntrega?
+  repartidorId     String?
+
+  tenant     Tenant       @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  usuario    Usuario?     @relation("PedidoCreadoPor", fields: [usuarioId], references: [id])
+  repartidor Usuario?     @relation("PedidoRepartidor", fields: [repartidorId], references: [id])
+  items      ItemPedido[]
+  movimientosCaja MovimientoCaja[]
 }
 
 model ItemPedido {
@@ -130,10 +153,12 @@ model Caja {
 model MovimientoCaja {
   id       String   @id @default(cuid())
   cajaId   String
+  pedidoId String?
   tipo     String   // apertura | cierre | retiro | ingreso
   monto    Decimal  @db.Decimal(10, 2)
   notas    String?
   fecha    DateTime @default(now())
 
-  caja Caja @relation(fields: [cajaId], references: [id], onDelete: Cascade)
+  caja   Caja    @relation(fields: [cajaId], references: [id], onDelete: Cascade)
+  pedido Pedido? @relation(fields: [pedidoId], references: [id])
 }
